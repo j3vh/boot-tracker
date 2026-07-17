@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Waar is Paul</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0b1d2a;
+      color: #eef4f8;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    header {
+      padding: 1.5rem 1rem 1rem;
+      text-align: center;
+    }
+    header h1 {
+      margin: 0 0 0.25rem;
+      font-size: 1.6rem;
+    }
+    header p {
+      margin: 0;
+      color: #9db3c2;
+      font-size: 0.95rem;
+    }
+    .map-wrap {
+      flex: 1;
+      padding: 0 1rem 1rem;
+    }
+    .map-frame {
+      width: 100%;
+      height: 100%;
+      min-height: 60vh;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #10293b;
+    }
+    footer {
+      text-align: center;
+      padding: 0.75rem 1rem 1.5rem;
+      font-size: 0.85rem;
+      color: #6f8697;
+    }
+    footer a {
+      color: #9db3c2;
+    }
+    #play-music {
+      margin-top: 0.75rem;
+      padding: 0.5rem 1rem;
+      border-radius: 999px;
+      border: 1px solid #3a5266;
+      background: #16324a;
+      color: #eef4f8;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    #play-music:hover {
+      background: #1c3d59;
+    }
+    #play-music.hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>⚓ Waar is Paul</h1>
+    <p>Roepnaam PA5475</p>
+    <button id="play-music" class="hidden" type="button">🎵 Speel het lied</button>
+  </header>
+
+  <audio id="theme-song" src="paul-position.mp3" loop></audio>
+  <script>
+    const audio = document.getElementById('theme-song');
+    const playButton = document.getElementById('play-music');
+    audio.play().catch(() => {
+      playButton.classList.remove('hidden');
+    });
+    playButton.addEventListener('click', () => {
+      audio.play();
+      playButton.classList.add('hidden');
+    });
+  </script>
+
+  <div class="map-wrap">
+    <div class="map-frame" id="vesselmap">
+      <script type="text/javascript">
+        var width = "100%";
+        var height = "100%";
+        var mmsi = "244790911";
+        var show_track = true;
+        var fleet = "";
+      </script>
+      <script type="text/javascript" src="https://www.vesselfinder.com/aismap.js"></script>
+    </div>
+  </div>
+
+  <footer>
+    Live positie via <a href="https://www.vesselfinder.com/" target="_blank" rel="noopener">VesselFinder</a>
+    &middot; positie werkt alleen als de boot AIS aan boord heeft en binnen bereik van een ontvanger is
+  </footer>
+</body>
+</html>
