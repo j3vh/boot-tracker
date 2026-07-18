@@ -42,31 +42,6 @@
       overflow: hidden;
       background: #10293b;
     }
-    .route-wrap {
-      padding: 0 1rem 1rem;
-    }
-    .route-wrap h2 {
-      margin: 0 0 0.5rem;
-      font-size: 1.1rem;
-      font-weight: 600;
-    }
-    .route-frame {
-      width: 100%;
-      height: 40vh;
-      border-radius: 10px;
-      overflow: hidden;
-      background: #10293b;
-    }
-    .route-empty {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      color: #6f8697;
-      font-size: 0.9rem;
-      text-align: center;
-      padding: 1rem;
-    }
     footer {
       text-align: center;
       padding: 0.75rem 1rem 1.5rem;
@@ -126,57 +101,6 @@
       <script type="text/javascript" src="https://www.vesselfinder.com/aismap.js"></script>
     </div>
   </div>
-
-  <div class="route-wrap">
-    <h2>Route (log)</h2>
-    <div class="route-frame" id="route-map">
-      <div class="route-empty" id="route-empty">Route wordt geladen&hellip;</div>
-    </div>
-  </div>
-
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script>
-    async function loadRoute() {
-      const emptyEl = document.getElementById('route-empty');
-      let points = [];
-      try {
-        const res = await fetch('data/track-log.jsonl', { cache: 'no-store' });
-        if (!res.ok) throw new Error('kon logbestand niet laden');
-        const text = await res.text();
-        points = text
-          .split('\n')
-          .map((line) => line.trim())
-          .filter(Boolean)
-          .map((line) => JSON.parse(line))
-          .filter((entry) => typeof entry.lat === 'number' && typeof entry.lon === 'number');
-      } catch (err) {
-        emptyEl.textContent = 'Route kon niet worden geladen.';
-        return;
-      }
-
-      if (points.length === 0) {
-        emptyEl.textContent = 'Nog geen gelogde posities.';
-        return;
-      }
-
-      emptyEl.remove();
-      const latLngs = points.map((p) => [p.lat, p.lon]);
-      const map = L.map('route-map');
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      }).addTo(map);
-
-      const line = L.polyline(latLngs, { color: '#4fa3d1', weight: 3 }).addTo(map);
-      L.circleMarker(latLngs[0], { radius: 5, color: '#6fbf73' }).addTo(map).bindTooltip('Start');
-      L.circleMarker(latLngs[latLngs.length - 1], { radius: 5, color: '#e8a24a' })
-        .addTo(map)
-        .bindTooltip('Laatste positie');
-      map.fitBounds(line.getBounds(), { padding: [20, 20] });
-    }
-
-    loadRoute();
-  </script>
 
   <footer>
     Live positie via <a href="https://www.vesselfinder.com/" target="_blank" rel="noopener">VesselFinder</a>
