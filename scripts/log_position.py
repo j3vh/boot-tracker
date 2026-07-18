@@ -36,9 +36,13 @@ async def fetch_position():
 
     async with websockets.connect(STREAM_URL) as ws:
         await ws.send(json.dumps(subscribe_message))
+        print("Connected to aisstream.io, subscription sent.")
+        message_count = 0
         try:
             async with asyncio.timeout(TIMEOUT_SECONDS):
                 async for raw in ws:
+                    message_count += 1
+                    print(f"Received message {message_count}: {raw[:500]}")
                     data = json.loads(raw)
                     if data.get("MessageType") != "PositionReport":
                         continue
@@ -56,6 +60,7 @@ async def fetch_position():
                         "heading": report.get("TrueHeading"),
                     }
         except TimeoutError:
+            print(f"Timed out after {message_count} message(s) received in total.")
             return None
 
 
