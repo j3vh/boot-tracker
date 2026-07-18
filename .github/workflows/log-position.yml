@@ -19,11 +19,11 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install websockets
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
 
       - name: Fetch and log position
-        env:
-          AISSTREAM_API_KEY: ${{ secrets.AISSTREAM_API_KEY }}
         run: python scripts/log_position.py
 
       - name: Commit track log if changed

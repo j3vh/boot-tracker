@@ -1,81 +1,122 @@
 #!/usr/bin/env python3
-"""Log one AIS position report for a single vessel from aisstream.io.
+"""Log one AIS position for the boat by loading the VesselFinder embed
+widget in a headless browser and reading the position data the widget
+itself fetches over the network.
 
-Connects to the aisstream.io websocket feed, waits (up to TIMEOUT_SECONDS)
-for a position report matching MMSI, and appends it as one JSON line to
-the track log. If nothing arrives in time (boat out of AIS range/off),
-the script exits quietly without writing anything.
+This is a diagnostic-first version: every response that looks relevant
+(JSON content-type, or a body mentioning the vessel's MMSI) is printed
+in full so we can confirm the exact shape VesselFinder returns before
+locking in specific field names.
 """
 
-import asyncio
+import http.server
 import json
 import os
-import sys
+import socketserver
+import threading
 from datetime import datetime, timezone
 
-import websockets
+from playwright.sync_api import sync_playwright
 
 MMSI = "244790911"
-STREAM_URL = "wss://stream.aisstream.io/v0/stream"
-TIMEOUT_SECONDS = 90
-LOG_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "track-log.jsonl")
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+LOG_PATH = os.path.join(REPO_ROOT, "data", "track-log.jsonl")
+PORT = 8931
+PAGE_WAIT_MS = 12000
 
 
-async def fetch_position():
-    api_key = os.environ.get("AISSTREAM_API_KEY")
-    if not api_key:
-        print("AISSTREAM_API_KEY is not set", file=sys.stderr)
-        sys.exit(1)
-
-    subscribe_message = {
-        "APIKey": api_key,
-        "BoundingBoxes": [[[-90, -180], [90, 180]]],
-        "FiltersShipMMSI": [MMSI],
-        "FilterMessageTypes": ["PositionReport"],
-    }
-
-    async with websockets.connect(STREAM_URL) as ws:
-        await ws.send(json.dumps(subscribe_message))
-        print("Connected to aisstream.io, subscription sent.")
-        message_count = 0
-        try:
-            async with asyncio.timeout(TIMEOUT_SECONDS):
-                async for raw in ws:
-                    message_count += 1
-                    print(f"Received message {message_count}: {raw[:500]}")
-                    data = json.loads(raw)
-                    if data.get("MessageType") != "PositionReport":
-                        continue
-                    meta = data.get("MetaData", {})
-                    if str(meta.get("MMSI")) != MMSI:
-                        continue
-                    report = data.get("Message", {}).get("PositionReport", {})
-                    return {
-                        "time": meta.get("time_utc")
-                        or datetime.now(timezone.utc).isoformat(),
-                        "lat": meta.get("latitude", report.get("Latitude")),
-                        "lon": meta.get("longitude", report.get("Longitude")),
-                        "sog": report.get("Sog"),
-                        "cog": report.get("Cog"),
-                        "heading": report.get("TrueHeading"),
-                    }
-        except TimeoutError:
-            print(f"Timed out after {message_count} message(s) received in total.")
-            return None
+def serve_repo():
+    handler = http.server.SimpleHTTPRequestHandler
+    os.chdir(REPO_ROOT)
+    httpd = socketserver.TCPServer(("127.0.0.1", PORT), handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    return httpd
 
 
-def append_to_log(entry):
-    os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
-    with open(LOG_PATH, "a") as f:
-        f.write(json.dumps(entry) + "\n")
+def find_lat_lon(obj):
+    """Recursively search a parsed JSON value for a lat/lon-ish pair."""
+    if isinstance(obj, dict):
+        keys = {k.lower(): k for k in obj.keys()}
+        lat_key = next((keys[k] for k in keys if k in ("lat", "latitude")), None)
+        lon_key = next(
+            (keys[k] for k in keys if k in ("lon", "lng", "longitude")), None
+        )
+        if lat_key and lon_key:
+            try:
+                return float(obj[lat_key]), float(obj[lon_key])
+            except (TypeError, ValueError):
+                pass
+        for v in obj.values():
+            found = find_lat_lon(v)
+            if found:
+                return found
+    elif isinstance(obj, list):
+        for item in obj:
+            found = find_lat_lon(item)
+            if found:
+                return found
+    return None
 
 
 def main():
-    entry = asyncio.run(fetch_position())
-    if entry is None:
-        print(f"No position for MMSI {MMSI} within {TIMEOUT_SECONDS}s, skipping.")
+    httpd = serve_repo()
+    captured = []
+    position = None
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+
+        def on_response(response):
+            nonlocal position
+            url = response.url
+            if "vesselfinder" not in url and "aismap" not in url:
+                return
+            content_type = response.headers.get("content-type", "")
+            try:
+                body = response.text()
+            except Exception as exc:
+                captured.append(f"{url} [{content_type}] -> could not read body: {exc}")
+                return
+            if "json" not in content_type and MMSI not in body:
+                return
+            captured.append(f"{url} [{content_type}]\n{body[:2000]}")
+            if MMSI not in body:
+                return
+            try:
+                data = json.loads(body)
+            except ValueError:
+                return
+            found = find_lat_lon(data)
+            if found and position is None:
+                position = found
+
+        page.on("response", on_response)
+        page.goto(f"http://127.0.0.1:{PORT}/index.html")
+        page.wait_for_timeout(PAGE_WAIT_MS)
+        browser.close()
+
+    httpd.shutdown()
+
+    print(f"Captured {len(captured)} relevant response(s):")
+    for entry in captured:
+        print("----")
+        print(entry)
+
+    if position is None:
+        print("Could not find a lat/lon pair for this MMSI in any captured response.")
         return
-    append_to_log(entry)
+
+    lat, lon = position
+    entry = {
+        "time": datetime.now(timezone.utc).isoformat(),
+        "lat": lat,
+        "lon": lon,
+    }
+    os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+    with open(LOG_PATH, "a") as f:
+        f.write(json.dumps(entry) + "\n")
     print(f"Logged position: {entry}")
 
 
